@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["poppler_utils", "libpng", "libjpeg", "zlib"]
+nixPkgs = ["python312", "python312Packages.pip", "poppler_utils", "libpng", "libjpeg", "zlib"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["python3 -m pip install -r requirements.txt"]
 
 [start]
 cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
