@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARG ブログページ自動生成ツール</title>
+<style>
+  :root {
+    --primary: #1a4a6e;
+    --accent: #2a6496;
+    --light: #e8f4f8;
+    --border: #c8dce8;
+    --text: #333;
+    --success: #3a7a3a;
+    --error: #c0392b;
+  }
+  
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Meiryo', sans-serif;
+    background: #f0f4f8;
+    color: var(--text);
+    min-height: 100vh;
+  }
+  
+  header {
+    background: var(--primary);
+    color: #fff;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  header .logo {
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+  }
+  header .logo span {
+    font-size: 11px;
+    opacity: 0.7;
+    display: block;
+    font-weight: normal;
+  }
+  header .badge {
+    background: #fff3;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    margin-left: auto;
+  }
+  
+  .main {
+    max-width: 780px;
+    margin: 40px auto;
+    padding: 0 20px;
+  }
+  
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  
+  .card-header {
+    background: var(--primary);
+    color: #fff;
+    padding: 16px 24px;
+    font-size: 16px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-header .icon { font-size: 20px; }
+  
+  .card-body { padding: 28px 24px; }
+  
+  /* Template selector */
+  .template-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  
+  .template-option {
+    position: relative;
+  }
+  .template-option input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .template-option label {
+    display: block;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fafafa;
+  }
+  .template-option label:hover {
+    border-color: var(--accent);
+    background: var(--light);
+  }
+  .template-option input:checked + label {
+    border-color: var(--accent);
+    background: var(--light);
+    box-shadow: 0 0 0 3px rgba(42,100,150,0.15);
+  }
+  .template-option .t-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .template-option .t-name {
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--primary);
+    vertical-align: middle;
+  }
+  .template-option .t-desc {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  
+  /* File upload area */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fafafa;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: var(--light);
+  }
+  .upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .upload-zone .upload-icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-zone .upload-text {
+    font-size: 16px;
+    color: var(--accent);
+    font-weight: bold;
+    margin-bottom: 6px;
+  }
+  .upload-zone .upload-hint { font-size: 13px; color: #999; }
+  .upload-zone .file-name {
+    font-size: 14px;
+    color: var(--success);
+    font-weight: bold;
+    margin-top: 10px;
+    display: none;
+  }
+  
+  /* Submit button */
+  .btn-generate {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 20px;
+    font-family: inherit;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-generate:hover { background: var(--primary); }
+  .btn-generate:disabled { background: #999; cursor: not-allowed; }
+  
+  /* Progress */
+  .progress-section {
+    display: none;
+  }
+  .progress-bar-wrap {
+    background: #eee;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 10px;
+    margin: 12px 0;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #5bc0de);
+    border-radius: 8px;
+    transition: width 0.4s;
+    width: 0%;
+  }
+  .progress-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #999;
+    transition: color 0.3s;
+  }
+  .step.active { color: var(--accent); font-weight: bold; }
+  .step.done { color: var(--success); }
+  .step .step-icon { font-size: 16px; }
+  
+  /* Result */
+  .result-section {
+    display: none;
+  }
+  .result-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .btn-action {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: 2px solid var(--accent);
+    background: #fff;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .btn-action:hover, .btn-action.primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .result-info {
+    background: var(--light);
+    border-radius: 6px;
+    padding: 14px;
+    font-size: 13px;
+    color: #555;
+    line-height: 1.7;
+  }
+  .result-info strong { color: var(--primary); }
+  
+  /* Error */
+  .error-msg {
+    background: #fde8e8;
+    border: 1px solid #f5c6c6;
+    border-radius: 6px;
+    padding: 12px 16px;
+    color: var(--error);
+    font-size: 14px;
+    display: none;
+    margin-top: 12px;
+  }
+  
+  /* Instructions */
+  .instructions {
+    background: var(--light);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: #555;
+    line-height: 1.8;
+  }
+  .instructions h3 {
+    color: var(--primary);
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .instructions ol { padding-left: 20px; }
+  .instructions li { margin-bottom: 4px; }
+  
+  @media (max-width: 560px) {
+    .template-grid { grid-template-columns: 1fr; }
+    .result-actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    一般財団法人 阿部 亮 財団
+    <span>ABE RYO FOUNDATION</span>
+  </div>
+  <div class="badge">ブログ自動生成ツール</div>
+</header>
+
+<div class="main">
+
+  <div class="instructions">
+    <h3>📋 使い方</h3>
+    <ol>
+      <li>テンプレートの種類を選んでください（病院・学校・日本語・未来）</li>
+      <li>活動報告のPDFファイルをアップロードしてください</li>
+      <li>「ページを生成する」をクリックしてください</li>
+      <li>生成後、プレビューの確認とダウンロードができます</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="icon">🎨</span>
+      テンプレートを選択
+    </div>
+    <div class="card-body">
+      <div class="template-grid">
+        {% for key, label in templates.items() %}
+        <div class="template-option">
+          <input type="radio" name="template_type" id="t_{{ key }}" value="{{ key }}"
+            {% if loop.first %}checked{% endif %}>
+          <label for="t_{{ key }}">
+            <span class="t-color" style="background: {% if key=='hospital' %}#2a6496{% elif key=='school' %}#3a7a3a{% elif key=='japanese' %}#8b4513{% else %}#6a0dad{% endif %}"></span>
+            <span class="t-name">
+              {% if key=='hospital' %}🏥 病院ページ
+              {% elif key=='school' %}🏫 学校ページ
+              {% elif key=='japanese' %}🇯🇵 日本語ページ
+              {% else %}🌟 未来ページ{% endif %}
+            </span>
+            <div class="t-desc">{{ label }}</div>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="icon">📄</span>
+      PDFをアップロード
+    </div>
+    <div class="card-body">
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="pdfInput" accept=".pdf">
+        <div class="upload-icon">📤</div>
+        <div class="upload-text">PDFファイルをドロップ、またはクリックして選択</div>
+        <div class="upload-hint">最大50MB・PDFファイルのみ対応</div>
+        <div class="file-name" id="fileName"></div>
+      </div>
+      
+      <div class="error-msg" id="errorMsg"></div>
+      
+      <button class="btn-generate" id="generateBtn" onclick="generate()" disabled>
+        <span>✨</span> ページを生成する
+      </button>
+    </div>
+  </div>
+
+  <div class="card progress-section" id="progressSection">
+    <div class="card-header">
+      <span class="icon">⚙️</span>
+      生成中...
+    </div>
+    <div class="card-body">
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="progress-steps">
+        <div class="step" id="step1"><span class="step-icon">📑</span> PDFからテキストを抽出中</div>
+        <div class="step" id="step2"><span class="step-icon">🖼️</span> 画像を抽出・最適化中</div>
+        <div class="step" id="step3"><span class="step-icon">✂️</span> 画像をトリミング中</div>
+        <div class="step" id="step4"><span class="step-icon">🔨</span> HTMLページを生成中</div>
+        <div class="step" id="step5"><span class="step-icon">✅</span> 完了</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card result-section" id="resultSection">
+    <div class="card-header" style="background: #2a5a2a;">
+      <span class="icon">🎉</span>
+      生成完了！
+    </div>
+    <div class="card-body">
+      <div class="result-info" id="resultInfo"></div>
+      <div class="result-actions">
+        <a href="#" class="btn-action primary" id="previewBtn" target="_blank">
+          👁️ プレビューを見る
+        </a>
+        <a href="#" class="btn-action" id="downloadBtn">
+          ⬇️ ZIPでダウンロード
+        </a>
+        <button class="btn-action" onclick="resetForm()">
+          🔄 新しいページを作成
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const pdfInput = document.getElementById('pdfInput');
+const generateBtn = document.getElementById('generateBtn');
+const uploadZone = document.getElementById('uploadZone');
+
+pdfInput.addEventListener('change', () => {
+  const file = pdfInput.files[0];
+  if (file) {
+    document.getElementById('fileName').textContent = '✅ ' + file.name;
+    document.getElementById('fileName').style.display = 'block';
+    generateBtn.disabled = false;
+  }
+});
+
+// Drag and drop
+uploadZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  uploadZone.classList.add('dragover');
+});
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files[0]?.name.toLowerCase().endsWith('.pdf')) {
+    pdfInput.files = files;
+    document.getElementById('fileName').textContent = '✅ ' + files[0].name;
+    document.getElementById('fileName').style.display = 'block';
+    generateBtn.disabled = false;
+  }
+});
+
+async function generate() {
+  const file = pdfInput.files[0];
+  if (!file) return;
+  
+  const templateType = document.querySelector('input[name="template_type"]:checked').value;
+  
+  // Show progress
+  document.getElementById('progressSection').style.display = 'block';
+  document.getElementById('resultSection').style.display = 'none';
+  document.getElementById('errorMsg').style.display = 'none';
+  generateBtn.disabled = true;
+  
+  // Animate steps
+  const steps = ['step1','step2','step3','step4','step5'];
+  const progressBar = document.getElementById('progressBar');
+  
+  let stepIdx = 0;
+  const stepInterval = setInterval(() => {
+    if (stepIdx > 0) {
+      document.getElementById(steps[stepIdx-1]).classList.remove('active');
+      document.getElementById(steps[stepIdx-1]).classList.add('done');
+      document.getElementById(steps[stepIdx-1]).querySelector('.step-icon').textContent = '✅';
+    }
+    if (stepIdx < steps.length - 1) {
+      document.getElementById(steps[stepIdx]).classList.add('active');
+      progressBar.style.width = ((stepIdx + 1) / steps.length * 85) + '%';
+      stepIdx++;
+    } else {
+      clearInterval(stepInterval);
+    }
+  }, 1800);
+  
+  // Prepare form data
+  const formData = new FormData();
+  formData.append('pdf', file);
+  formData.append('template_type', templateType);
+  
+  try {
+    const response = await fetch('/upload', {
+      method: 'POST',
+      body: formData
+    });
+    
+    clearInterval(stepInterval);
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      // Complete all steps
+      steps.forEach((s, i) => {
+        const el = document.getElementById(s);
+        el.classList.remove('active');
+        el.classList.add('done');
+        el.querySelector('.step-icon').textContent = '✅';
+      });
+      progressBar.style.width = '100%';
+      
+      // Show result
+      setTimeout(() => {
+        document.getElementById('progressSection').style.display = 'none';
+        showResult(data);
+      }, 600);
+    } else {
+      clearInterval(stepInterval);
+      showError(data.error || '生成に失敗しました');
+      generateBtn.disabled = false;
+    }
+  } catch (err) {
+    clearInterval(stepInterval);
+    showError('サーバーエラーが発生しました: ' + err.message);
+    generateBtn.disabled = false;
+  }
+}
+
+function showResult(data) {
+  const resultSection = document.getElementById('resultSection');
+  resultSection.style.display = 'block';
+  
+  const r = data.result;
+  document.getElementById('resultInfo').innerHTML = `
+    <strong>ジョブID:</strong> ${r.job_id}<br>
+    <strong>テンプレート:</strong> ${r.template_type}<br>
+    <strong>抽出された画像数:</strong> ${r.image_count}枚<br>
+    <strong>セクション数:</strong> ${r.sections ? r.sections.length : '-'}個
+  `;
+  
+  document.getElementById('previewBtn').href = '/preview/' + r.job_id;
+  document.getElementById('downloadBtn').href = '/download/' + r.job_id;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = '❌ エラー: ' + msg;
+  el.style.display = 'block';
+  document.getElementById('progressSection').style.display = 'none';
+}
+
+function resetForm() {
+  pdfInput.value = '';
+  document.getElementById('fileName').style.display = 'none';
+  document.getElementById('fileName').textContent = '';
+  document.getElementById('resultSection').style.display = 'none';
+  document.getElementById('progressSection').style.display = 'none';
+  document.getElementById('errorMsg').style.display = 'none';
+  generateBtn.disabled = true;
+  document.getElementById('progressBar').style.width = '0%';
+  ['step1','step2','step3','step4','step5'].forEach(s => {
+    const el = document.getElementById(s);
+    el.classList.remove('active','done');
+    // Restore original icons
+    const icons = {'step1':'📑','step2':'🖼️','step3':'✂️','step4':'🔨','step5':'✅'};
+    el.querySelector('.step-icon').textContent = icons[s];
+  });
+}
+</script>
+</body>
+</html>
