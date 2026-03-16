@@ -78,6 +78,10 @@ railway up
 | 変数名 | 値 | 説明 |
 |--------|-----|------|
 | `PORT` | 自動設定 | Railwayが自動で設定 |
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | Claude APIキー（テキスト校正に使用）|
+
+> **ANTHROPIC_API_KEY の取得方法**  
+> [console.anthropic.com](https://console.anthropic.com) → API Keys → Create Key
 
 ---
 

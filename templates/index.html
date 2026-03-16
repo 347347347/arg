@@ -397,8 +397,9 @@
         <div class="step" id="step1"><span class="step-icon">📑</span> PDFからテキストを抽出中</div>
         <div class="step" id="step2"><span class="step-icon">🖼️</span> 画像を抽出・最適化中</div>
         <div class="step" id="step3"><span class="step-icon">✂️</span> 画像をトリミング中</div>
-        <div class="step" id="step4"><span class="step-icon">🔨</span> HTMLページを生成中</div>
-        <div class="step" id="step5"><span class="step-icon">✅</span> 完了</div>
+        <div class="step" id="step4"><span class="step-icon">🤖</span> AIがテキストを校正中（文字化け・誤字脱字・空白）</div>
+        <div class="step" id="step5"><span class="step-icon">🔨</span> HTMLページを生成中</div>
+        <div class="step" id="step6"><span class="step-icon">✅</span> 完了</div>
       </div>
     </div>
   </div>
@@ -471,7 +472,7 @@ async function generate() {
   generateBtn.disabled = true;
   
   // Animate steps
-  const steps = ['step1','step2','step3','step4','step5'];
+  const steps = ['step1','step2','step3','step4','step5','step6'];
   const progressBar = document.getElementById('progressBar');
   
   let stepIdx = 0;
@@ -488,7 +489,8 @@ async function generate() {
     } else {
       clearInterval(stepInterval);
     }
-  }, 1800);
+  // step4（AI校正）は時間がかかるので少し長めに待つ
+  }, stepIdx === 3 ? 3500 : 1800);
   
   // Prepare form data
   const formData = new FormData();
@@ -564,11 +566,13 @@ function resetForm() {
   document.getElementById('errorMsg').style.display = 'none';
   generateBtn.disabled = true;
   document.getElementById('progressBar').style.width = '0%';
-  ['step1','step2','step3','step4','step5'].forEach(s => {
+  const icons = {
+    'step1':'📑','step2':'🖼️','step3':'✂️',
+    'step4':'🤖','step5':'🔨','step6':'✅'
+  };
+  ['step1','step2','step3','step4','step5','step6'].forEach(s => {
     const el = document.getElementById(s);
     el.classList.remove('active','done');
-    // Restore original icons
-    const icons = {'step1':'📑','step2':'🖼️','step3':'✂️','step4':'🔨','step5':'✅'};
     el.querySelector('.step-icon').textContent = icons[s];
   });
 }

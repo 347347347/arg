@@ -4,6 +4,7 @@ from PIL import Image
 from pypdf import PdfReader
 from pdf2image import convert_from_path
 from page_generator import generate_page
+from text_corrector import correct_text
 
 def process_pdf(pdf_path, job_id, template_type, output_folder):
     """Extract text and images from PDF, then generate HTML page."""
@@ -20,8 +21,11 @@ def process_pdf(pdf_path, job_id, template_type, output_folder):
     
     # 3. Parse text into structured sections
     sections = parse_text_to_sections(text_content, template_type)
+
+    # 4. AI校正：文字化け・誤字脱字・空白を修正
+    sections = correct_text(sections, template_type)
     
-    # 4. Generate HTML page
+    # 5. Generate HTML page
     html_content = generate_page(sections, extracted_images, template_type, job_id)
     
     # Save HTML
