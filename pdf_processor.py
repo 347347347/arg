@@ -4,7 +4,7 @@ from PIL import Image
 from pypdf import PdfReader
 from pdf2image import convert_from_path
 from page_generator import generate_page
-from text_corrector import correct_text
+from text_corrector import correct_text, preprocess_text
 
 def process_pdf(pdf_path, job_id, template_type, output_folder):
     """Extract text and images from PDF, then generate HTML page."""
@@ -41,14 +41,15 @@ def process_pdf(pdf_path, job_id, template_type, output_folder):
     }
 
 def extract_text(pdf_path):
-    """Extract all text from PDF."""
+    """Extract all text from PDF and preprocess (join broken lines, fix spaces)."""
     reader = PdfReader(pdf_path)
     full_text = []
     for page in reader.pages:
         text = page.extract_text()
         if text:
-            full_text.append(text)
-    return '\n'.join(full_text)
+            # 行末改行結合・空白修正をページ単位で適用
+            full_text.append(preprocess_text(text))
+    return '\n\n'.join(full_text)
 
 def extract_images(pdf_path, images_dir, template_type):
     """Extract images by rendering PDF pages and smart-cropping."""

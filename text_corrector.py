@@ -2,8 +2,8 @@
 text_corrector.py
 PDF抽出テキストの修正を2段階で行う。
 
-Step 1 (Python正規表現): 不自然な空白を確実・即時に除去
-Step 2 (Claude API):     文字化け・誤字脱字・残った不自然な表現を修正
+Step 1 (Python): レイアウト型PDFの行末改行を結合 + 不自然な空白を除去
+Step 2 (Claude API): 残った文字化け・誤字脱字を修正
 """
 
 import json
@@ -13,131 +13,191 @@ import re
 
 
 # ─────────────────────────────────────────────────────────
-# Step 1: 正規表現による空白除去（API不要・確実）
+# Step 1-A: 行末改行の結合（レイアウト型PDFの主な問題）
 # ─────────────────────────────────────────────────────────
 
-def fix_pdf_spaces(text: str) -> str:
-    """PDFから抽出したテキストの不自然な空白を除去する。"""
+# 文の終わりと判断する文字
+SENTENCE_END = set('。．！？」』）〕』')
+# 段落・見出しの開始と判断するパターン
+PARA_START = re.compile(r'^[◎●■▲★【〔*＊]|^\d+[\.．、]')
+# 途中で切れている行末（結合すべき）
+MID_SENTENCE_END = re.compile(r'[\u3040-\u9fff\uff00-\uffef、・ぁ-ん]$')
 
-    # 0. 全角スペース(\u3000)を半角スペースに統一
+
+def join_broken_lines(text: str) -> str:
+    """
+    レイアウト型PDFで行末強制改行されたテキストを結合する。
+    「ボラン\nティア」→「ボランティア」
+    「出張診療活\n動を実施」→「出張診療活動を実施」
+    """
+    # \u2028（行区切り文字）を改行に統一
+    text = text.replace('\u2028', '\n')
+
+    lines = text.split('\n')
+    result = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i].rstrip()
+
+        # 空行はそのまま保持（段落区切り）
+        if not line.strip():
+            result.append('')
+            i += 1
+            continue
+
+        last_char = line[-1] if line else ''
+
+        # 次の行を取得
+        next_stripped = lines[i + 1].strip() if i + 1 < len(lines) else ''
+
+        # 次の行が新しい見出し・段落開始 → 結合しない
+        next_is_new_block = (
+            not next_stripped
+            or bool(PARA_START.match(next_stripped))
+        )
+
+        # 行末が文の終わり → 結合しない
+        if last_char in SENTENCE_END or next_is_new_block:
+            result.append(line)
+            i += 1
+            continue
+
+        # 行末が途中 → 次の行と結合していく
+        if MID_SENTENCE_END.search(line):
+            merged = line
+            while i + 1 < len(lines):
+                next_l = lines[i + 1].rstrip()
+                next_stripped = next_l.strip()
+                # 空行 or 新ブロック → 結合終了
+                if not next_stripped or bool(PARA_START.match(next_stripped)):
+                    break
+                merged += next_stripped
+                i += 1
+                # 文末に達したら終了
+                if merged[-1] in SENTENCE_END:
+                    break
+            result.append(merged)
+            i += 1
+        else:
+            result.append(line)
+            i += 1
+
+    return '\n'.join(result)
+
+
+# ─────────────────────────────────────────────────────────
+# Step 1-B: 残存する不自然な空白の除去
+# ─────────────────────────────────────────────────────────
+
+JP = r'[\u3040-\u9fff\uff00-\uffef]'
+
+def fix_spaces(text: str) -> str:
+    """日本語文字間・記号前後の不自然なスペースを除去する。"""
+    # 全角スペースを半角に
     text = text.replace('\u3000', ' ')
 
-    # 1. 日本語文字(ひらがな・カタカナ・漢字・記号)の間の半角スペースを除去
-    #    「ボラン ティア」→「ボランティア」 / 「活 動 報 告」→「活動報告」
-    JP = r'[\u3000-\u9fff\uff00-\uffef]'
-    for _ in range(8):  # 「活 動 報 告」のように連続する場合を繰り返し除去
+    # 日本語文字同士の間のスペース（繰り返し適用）
+    for _ in range(8):
         new = re.sub(rf'({JP}) ({JP})', r'\1\2', text)
         if new == text:
             break
         text = new
 
-    # 2. 日本語文字とASCII英数字の間の不自然なスペースを除去
-    #    「Japan Heart医 療センター」→「Japan Heart医療センター」
+    # 日本語↔ASCII間
     text = re.sub(rf'({JP}) ([a-zA-Z0-9])', r'\1\2', text)
     text = re.sub(rf'([a-zA-Z0-9]) ({JP})', r'\1\2', text)
 
-    # 3. 日本語記号の前後スペース除去
-    #    「認定医 ・堀」→「認定医・堀」 / 「・ 堀医師」→「・堀医師」
-    SYMBOLS = r'[・。、！？：；「」『』【】〔〕（）…—〇]'
-    text = re.sub(rf' ({SYMBOLS})', r'\1', text)
-    text = re.sub(rf'({SYMBOLS}) ', r'\1', text)
+    # 記号前後
+    SYMS = r'[・。、！？：；「」『』【】〔〕（）…—〇]'
+    text = re.sub(rf' ({SYMS})', r'\1', text)
+    text = re.sub(rf'({SYMS}) ', r'\1', text)
 
-    # 4. 数字と助数詞の間のスペース除去
-    #    「1 月」→「1月」 / 「18 件」→「18件」 / 「10 日」→「10日」
-    COUNTERS = r'[月日年時分秒件回人名校棟冊枚台個万円ページ週]'
-    text = re.sub(rf'(\d) ({COUNTERS})', r'\1\2', text)
+    # 数字+助数詞
+    text = re.sub(r'(\d) ([月日年時分秒件回人名校棟冊枚台個万円週])', r'\1\2', text)
 
-    # 5. 数字と年号助詞の間 (「2026 年」→「2026年」)
-    text = re.sub(r'(\d) (年|月|日|時|分|秒)', r'\1\2', text)
-
-    # 6. 波ダッシュ・チルダ前後のスペース
-    #    「1月 10 ～ 13 日」→「1月10～13日」
-    text = re.sub(r' ?[～〜] ?', '～', text)
-    # ただし数字同士の間でない場合は半角スペースを復元しない（英文中など）
-    # → 数字間のみ結合（上のルールで十分）
-
-    # 7. 連続スペースを1つに
+    # 連続スペース
     text = re.sub(r'  +', ' ', text)
 
-    # 8. 行頭・行末スペース除去
     return text.strip()
 
 
 def fix_sections_spaces(sections: list) -> list:
-    """sectionsリスト全体に空白修正を適用する。"""
-    result = []
-    for section in sections:
-        s = dict(section)
-        if s.get('title'):
-            s['title'] = fix_pdf_spaces(s['title'])
-        if s.get('body'):
-            s['body'] = [fix_pdf_spaces(line) for line in s['body']]
-        result.append(s)
-    return result
+    fixed = []
+    for s in sections:
+        sc = dict(s)
+        if sc.get('title'):
+            sc['title'] = fix_spaces(sc['title'])
+        if sc.get('body'):
+            sc['body'] = [fix_spaces(l) for l in sc['body']]
+        fixed.append(sc)
+    return fixed
 
 
 # ─────────────────────────────────────────────────────────
-# Step 2: Claude APIによる誤字脱字・文字化け修正
+# メイン関数：extract_text の直後に呼ぶ前処理
+# ─────────────────────────────────────────────────────────
+
+def preprocess_text(raw_text: str) -> str:
+    """PDFから抽出した生テキストに行結合＋空白除去を適用する。"""
+    text = join_broken_lines(raw_text)
+    text = fix_spaces(text)
+    return text
+
+
+# ─────────────────────────────────────────────────────────
+# Step 2: Claude API（誤字脱字・文字化けの修正）
 # ─────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """あなたはNPO・財団の活動報告ブログ編集者です。
 PDFから抽出・前処理済みのテキストの校正を行います。
 
 【修正すること】
-1. 文字化け（例：縺ｦ縺�→て / ??→適切な文字）
+1. 文字化け（例：縺ｦ縺�→て）
 2. 明らかな誤字脱字（例：「実しました」→「実施しました」）
-3. 残っている不自然な空白・文字の結合ミス
-4. 行末の不自然な句読点
+3. 残っている不自然な文字結合・分断
 
 【絶対に変えないこと】
-1. 内容・意味・事実
+1. 内容・意味・事実・数字
 2. 文体・口調
 3. 固有名詞（人名・地名・団体名）
-4. 意図的な改行・段落構成
+4. 段落構成
 
-【出力形式】JSONのみ。前置き・後書き・```不要。
+【出力形式】JSONのみ。```不要。
 {
-  "title": "修正後のページタイトル",
+  "title": "ページタイトル",
   "sections": [
-    {
-      "type": "page_title|section|text|interview",
-      "title": "見出し（なければ空文字）",
-      "body": ["段落1", "段落2"]
-    }
+    {"type": "page_title|section|text|interview", "title": "見出し", "body": ["段落1", "段落2"]}
   ]
 }"""
 
 
 def correct_text(sections: list, template_type: str) -> list:
-    """
-    Step1: 正規表現で空白を即時修正
-    Step2: Claude APIで文字化け・誤字脱字を修正（APIなければStep1結果を返す）
-    """
+    """Step1で空白・改行を修正済みのsectionsをAPIでさらに校正する。"""
     if not sections:
         return sections
 
-    # Step 1: 必ず実行（API不要・高速）
+    # Step 1: 空白修正（常に実行）
     sections = fix_sections_spaces(sections)
 
-    # Step 2: Claude API（環境変数にキーがある場合のみ）
+    # Step 2: Claude API（キーがある場合のみ）
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return sections
 
     input_data = json.dumps(sections, ensure_ascii=False, separators=(',', ':'))
     user_prompt = (
-        f"以下はPDFから抽出した「{_template_label(template_type)}」の活動報告テキストです。"
+        f"以下はPDFから抽出した「{_label(template_type)}」の活動報告テキストです。"
         f"文字化け・誤字脱字を修正してください。\n\n{input_data}"
     )
 
     try:
-        raw = _call_claude_api(api_key, user_prompt)
-        corrected = _parse_response(raw)
+        raw = _call_api(api_key, user_prompt)
+        corrected = _parse(raw)
         if corrected:
-            # API結果にも空白修正を再適用（念のため）
             return fix_sections_spaces(corrected)
     except Exception as e:
-        print(f"[text_corrector] API error (using Step1 result): {e}")
+        print(f"[text_corrector] API error (Step1 result used): {e}")
 
     return sections
 
@@ -146,14 +206,13 @@ def correct_text(sections: list, template_type: str) -> list:
 # 内部ヘルパー
 # ─────────────────────────────────────────────────────────
 
-def _call_claude_api(api_key: str, user_prompt: str) -> str:
+def _call_api(api_key: str, prompt: str) -> str:
     payload = json.dumps({
         "model": "claude-sonnet-4-20250514",
         "max_tokens": 4000,
         "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": user_prompt}]
+        "messages": [{"role": "user", "content": prompt}]
     }).encode("utf-8")
-
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages",
         data=payload,
@@ -166,17 +225,15 @@ def _call_claude_api(api_key: str, user_prompt: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
         body = json.loads(resp.read().decode("utf-8"))
-
     for block in body.get("content", []):
         if block.get("type") == "text":
             return block["text"]
     return ""
 
 
-def _parse_response(text: str) -> list:
+def _parse(text: str) -> list:
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text).strip()
-
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -188,21 +245,18 @@ def _parse_response(text: str) -> list:
                 return []
         else:
             return []
-
     if isinstance(data, dict) and "sections" in data:
-        sections = data["sections"]
+        secs = data["sections"]
         if data.get("title"):
-            sections = [s for s in sections if s.get("type") != "page_title"]
-            sections.insert(0, {"type": "page_title", "title": data["title"], "body": []})
-        return sections
-
+            secs = [s for s in secs if s.get("type") != "page_title"]
+            secs.insert(0, {"type": "page_title", "title": data["title"], "body": []})
+        return secs
     if isinstance(data, list):
         return data
-
     return []
 
 
-def _template_label(t: str) -> str:
+def _label(t: str) -> str:
     return {
         "hospital": "病院・医療活動",
         "school":   "学校建設プロジェクト",
